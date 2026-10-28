@@ -87,7 +87,7 @@
       var t = V.task, done = t.done, ty = t.type;
       h = '<section class="card" id="taskcard"><p class="eyebrow" id="steplabel"></p>';
       if (done) {
-        h += '<h2>C’est envoyé</h2><p class="lead" id="waittxt"></p>';
+        h += '<h2>C’est envoyé</h2><p class="lead" id="waittxt"></p>' + (t.lastRound ? '<p class="muted">C’était le dernier tour : la révélation arrive.</p>' : '<div class="field"><label for="ctext">En attendant : ajoute un élément que le prochain joueur devra intégrer</label><input type="text" id="ctext" maxlength="80" placeholder="ex. un parapluie jaune, une ambiance de nuit, un clown…"><div class="actions"><button class="btn" data-act="constraint">Envoyer cet élément</button><span class="muted" id="cstate"></span></div></div>');
       } else if (ty === 'write') {
         h += '<h2>Écris ton prompt de départ</h2><p class="muted">C’est le début de ton album : un autre joueur va devoir en faire une image. Une phrase précise et visuelle marche le mieux.</p>' +
           '<div class="field"><label for="ptext">Ton prompt</label><textarea id="ptext" maxlength="700" placeholder="Un sujet, un lieu, une lumière, un style…"></textarea></div>' +
@@ -115,20 +115,24 @@
     }
     box.innerHTML = h;
     if (k.indexOf('play:') === 0 && V.task) {
+      var ct = $('#ctext'); if (ct) ct.value = V.task.myConstraint || '';
       var s = $('#sugg'); if (s) { s.innerHTML = SUGGESTIONS.map(function (x, i) { return '<button type="button" data-act="sugg" data-i="' + i + '">' + esc(x) + '</button>'; }).join(''); }
       var own = $('#own');
       if (own && !(V.task.recv && !V.task.recv.skipped && V.task.recv.text)) own.innerHTML = '<div class="field"><label for="ptext">Aucun prompt reçu : écris le tien</label><textarea id="ptext" maxlength="700"></textarea></div>';
     }
   }
 
+  function constraintHTML(r, hint) {
+    return r && r.constraint ? '<p class="badge">Élément imposé par le joueur précédent : « ' + esc(r.constraint) + ' » (' + hint + ')</p>' : '';
+  }
   function recvPromptHTML(t) {
     var r = t.recv;
-    if (r && !r.skipped && r.text) return '<p class="muted">Prompt reçu (utilise-le tel quel)</p><blockquote class="quote">' + esc(r.text) + '</blockquote>';
+    if (r && !r.skipped && r.text) return '<p class="muted">Prompt reçu (utilise-le tel quel)</p><blockquote class="quote">' + esc(r.text) + '</blockquote>' + constraintHTML(r, 'sera ajouté automatiquement à la génération');
     return '<p class="badge">Le joueur précédent n’a rien envoyé.</p>';
   }
   function recvImageHTML(t) {
     var r = t.recv;
-    if (r && r.url) return '<div class="imgbox big"><img src="' + esc(r.url) + '" alt="Image à décrire"></div>';
+    if (r && r.url) return '<div class="imgbox big"><img src="' + esc(r.url) + '" alt="Image à décrire"></div>' + constraintHTML(r, 'à intégrer dans ton prompt');
     return '<p class="badge">Le joueur précédent n’a pas envoyé d’image. Écris un prompt de ton choix.</p>';
   }
 
@@ -151,7 +155,8 @@
       var t = V.task;
       $('#steplabel').textContent = 'Album ' + (t.album + 1) + ' · étape ' + (t.round + 1) + ' sur ' + V.rounds;
       $('#prog').innerHTML = V.players.filter(function (p) { return p.playing; }).map(function (p) { return '<li class="chip' + (p.done ? ' done' : '') + '">' + esc(p.name) + (p.done ? ' ✓' : '') + '</li>'; }).join('');
-      if (t.done) { var n = V.players.filter(function (p) { return p.done; }).length, tot = V.players.filter(function (p) { return p.playing; }).length; $('#waittxt').textContent = n + ' joueur' + (n > 1 ? 's ont' : ' a') + ' envoyé sur ' + tot + '. Le tour suivant démarre dès que tout le monde a terminé, ou à la fin du temps.'; }
+      if (t.done) { var n = V.players.filter(function (p) { return p.done; }).length, tot = V.players.filter(function (p) { return p.playing; }).length; var cs = $('#cstate'); if (cs) cs.textContent = V.task.myConstraint ? 'Envoyé : « ' + V.task.myConstraint + ' »' : '';
+        $('#waittxt').textContent = n + ' joueur' + (n > 1 ? 's ont' : ' a') + ' envoyé sur ' + tot + '. Le tour suivant démarre dès que tout le monde a terminé, ou à la fin du temps.'; }
       if (t.type === 'image' && !t.done) {
         var c = $('#cands');
         var sig = t.candidates.map(function (x) { return x.id; }).join(',') + '|' + selected + '|' + t.busy;
@@ -163,7 +168,8 @@
         }
         $('#btnGen').disabled = t.busy || t.attempts >= t.maxAttempts;
         $('#btnGen').textContent = t.candidates.length ? 'Générer une autre version' : 'Générer l’image';
-        $('#attempts').textContent = (t.maxAttempts - t.attempts) + ' essai' + (t.maxAttempts - t.attempts > 1 ? 's' : '') + ' restant' + (t.maxAttempts - t.attempts > 1 ? 's' : '');
+        if (t.candidates.length && t.maxAttempts === 1) $('#btnGen').hidden = true;
+        $('#attempts').textContent = t.maxAttempts === 1 ? 'Une seule génération par tour : fais-la compter.' : (t.maxAttempts - t.attempts) + ' essai(s) restant(s)';
         $('#gerr').textContent = t.error || '';
         $('#btnSend').disabled = !selected;
       }
@@ -199,6 +205,7 @@
     var right = st.type === 'image'
       ? '<p class="who">' + esc(st.author) + ' a généré cette image' + tag + '</p>' + (st.skipped ? '<p class="badge">Rien n’a été généré à temps.</p>' : '')
       : '<p class="who">' + esc(st.author) + (i === 0 ? ' a écrit le prompt de départ' : ' a décrit l’image') + tag + '</p>' + (st.skipped ? '<p class="badge">Pas de prompt à temps.</p>' : '<blockquote class="quote">' + esc(st.text) + '</blockquote>');
+    if (st.constraint) right += '<p class="badge">Élément imposé au joueur suivant : « ' + esc(st.constraint) + ' »</p>';
     return '<article class="card step' + (anim ? ' in' : '') + '">' + (body || '<div></div>') + '<div style="display:flex;flex-direction:column;gap:12px;min-width:0">' + right + '</div></article>';
   }
 
@@ -230,6 +237,7 @@
       else { var code = qroom || (($('#rcode') || {}).value || '').trim().toUpperCase(); if (code.length !== 4) { toast('Saisis le code à 4 lettres.'); return; } send({ t: 'join', room: code, name: name, token: token }); }
     } else if (a === 'copy') { var l = $('#link'); l.select(); try { navigator.clipboard.writeText(l.value).then(function () { toast('Lien copié.'); }, function () { toast('Copie le lien sélectionné.'); }); } catch (x) { toast('Copie le lien sélectionné.'); } }
     else if (a === 'addbot') send({ t: 'addbot' });
+    else if (a === 'constraint') { var ci = $('#ctext'); send({ t: 'constraint', text: ci ? ci.value : '' }); toast('Élément envoyé.'); }
     else if (a === 'kick') send({ t: 'kick', id: el.getAttribute('data-id') });
     else if (a === 'start') {
       send({ t: 'start', settings: { rounds: +$('#s-rounds').value, secWrite: +$('#s-w').value, secImage: +$('#s-i').value, secDescribe: +$('#s-d').value, style: $('#s-style').value, hostPlays: $('#s-play').checked } });
