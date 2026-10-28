@@ -81,7 +81,7 @@ function viewFor(room, p) {
   return {
     t: 'state', room: room.code, me: p.id, host: room.hostId === p.id, phase: room.phase, settings: room.settings,
     players: [...room.players.values()].map((q) => ({
-      id: q.id, name: q.name, connected: q.connected, host: q.id === room.hostId,
+      id: q.id, name: q.name, connected: q.connected, host: q.id === room.hostId, bot: !!q.bot,
       playing: room.order.includes(q.id), done: room.phase === 'play' && room.submitted.has(q.id),
     })),
     order: room.order, round: room.round, rounds: room.rounds, roundType: room.phase === 'play' ? roundType(room.round) : null,
@@ -103,6 +103,7 @@ function startRound(room) {
   for (const id of room.order) { const p = room.players.get(id); if (p) { p.cands = []; p.attempts = 0; p.gen = false; p.error = ''; } }
   room.endsAt = Date.now() + secondsFor(room, roundType(room.round)) * 1000;
   broadcast(room);
+  botsPlay(room);
 }
 function record(room, p, step) {
   const t = taskFor(room, p);
@@ -129,6 +130,28 @@ function maybeAdvance(room) {
   if (room.phase !== 'play') return;
   const waiting = room.order.filter((id) => { const p = room.players.get(id); return p && p.connected && !room.submitted.has(id); });
   if (waiting.length === 0) finishRound(room); else broadcast(room);
+}
+
+/* ---------- joueurs de test (bots) : jouent automatiquement, images factices sans coût ---------- */
+const BOT_TEXTS = ['Un phare au bord d’une falaise, ciel orageux', 'Une table dressée dans une forêt de brume', 'Un robot qui arrose des tournesols', 'Une ruelle pavée sous la pluie, néons rouges', 'Un chat qui dirige un orchestre'];
+function botsPlay(room) {
+  const r = room.round;
+  room.order.forEach((id) => {
+    const p = room.players.get(id);
+    if (!p || !p.bot) return;
+    setTimeout(() => {
+      if (room.phase !== 'play' || room.round !== r || room.submitted.has(id)) return;
+      const t = taskFor(room, p); if (!t || t.done) return;
+      if (t.type === 'image') {
+        const prompt = (t.recv && t.recv.text) || 'image de test';
+        const iid = hex(8); room.images.set(iid, mockImage(prompt)); record(room, p, { type: 'image', imageId: iid });
+      } else {
+        const text = t.type === 'write' ? BOT_TEXTS[crypto.randomInt(BOT_TEXTS.length)] : 'Description de test : ' + BOT_TEXTS[crypto.randomInt(BOT_TEXTS.length)].toLowerCase();
+        record(room, p, { type: 'prompt', text });
+      }
+      maybeAdvance(room);
+    }, 1000 + crypto.randomInt(3000));
+  });
 }
 
 /* ---------- génération d'image (Gemini) ---------- */
@@ -223,6 +246,13 @@ function handle(ws, ctx, msg) {
   const isHost = room.hostId === p.id;
   switch (msg.t) {
     case 'rename': { const n = clean(msg.name, 24); if (n && room.phase === 'lobby') { p.name = n; broadcast(room); } break; }
+    case 'addbot': {
+      if (!isHost || room.phase !== 'lobby' || room.players.size >= MAX_PLAYERS) break;
+      const k = [...room.players.values()].filter((q) => q.bot).length + 1;
+      const id = hex(6);
+      room.players.set(id, { id, token: hex(16), name: 'Test ' + k, connected: true, ws: null, bot: true, cands: [], attempts: 0 });
+      broadcast(room); break;
+    }
     case 'kick': { if (isHost && room.phase === 'lobby' && msg.id !== p.id) { const q = room.players.get(msg.id); if (q) { send(q, { t: 'kicked' }); room.players.delete(msg.id); broadcast(room); } } break; }
     case 'start': {
       if (!isHost || room.phase !== 'lobby') break;
