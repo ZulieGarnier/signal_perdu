@@ -11,7 +11,7 @@ const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.GEMINI_API_KEY || '';
 const MODEL = process.env.GEMINI_IMAGE_MODEL || 'gemini-2.5-flash-image';
 const MAX_PLAYERS = 16;
-const MAX_ATTEMPTS = Number(process.env.MAX_ATTEMPTS || 3); // essais de génération par joueur et par tour
+const MAX_ATTEMPTS = Number(process.env.MAX_ATTEMPTS || 1); // générations réussies par joueur et par tour (les échecs ne comptent pas)
 const MAX_PARALLEL_GEN = Number(process.env.MAX_PARALLEL_GEN || 5);
 const ROOM_TTL_MS = 6 * 3600 * 1000;
 
@@ -56,10 +56,11 @@ function taskFor(room, p) {
   let recv = null;
   if (r > 0) {
     const prev = room.albums[a].steps[r - 1];
-    if (prev) recv = { type: prev.type, text: prev.text || '', url: prev.imageId ? `/img/${room.code}/${prev.imageId}` : null, skipped: !!prev.skipped };
+    if (prev) recv = { type: prev.type, text: prev.text || '', url: prev.imageId ? `/img/${room.code}/${prev.imageId}` : null, skipped: !!prev.skipped, constraint: prev.constraint || '' };
   }
   return {
     album: a, round: r, type, recv, done: room.submitted.has(p.id),
+    myConstraint: (room.albums[a].steps[r] || {}).constraint || '', lastRound: r >= room.rounds - 1,
     candidates: (p.cands || []).map((id) => ({ id, url: `/img/${room.code}/${id}` })),
     attempts: p.attempts || 0, maxAttempts: MAX_ATTEMPTS, busy: !!p.gen, error: p.error || '',
   };
@@ -69,7 +70,7 @@ function albumsView(room) {
   return room.albums.map((al, i) => ({
     owner: (room.players.get(room.order[i]) || {}).name || 'Joueur',
     steps: al.steps.map((st) => st && ({
-      round: st.round, type: st.type, skipped: !!st.skipped, text: st.text || '',
+      round: st.round, type: st.type, skipped: !!st.skipped, text: st.text || '', constraint: st.constraint || '',
       author: (room.players.get(st.author) || {}).name || 'Joueur',
       url: st.imageId ? `/img/${room.code}/${st.imageId}` : null,
     })),
@@ -200,14 +201,15 @@ async function generate(room, p, extraPrompt) {
   if (!t || t.type !== 'image' || t.done || p.gen || p.attempts >= MAX_ATTEMPTS) return;
   let prompt = t.recv && !t.recv.skipped && t.recv.text ? t.recv.text : clean(extraPrompt, 700);
   if (!prompt) { p.error = 'Aucun prompt reçu : écris le tien.'; return send(p, viewFor(room, p)); }
+  if (t.recv && t.recv.constraint) prompt += '. Élément obligatoire à intégrer : ' + t.recv.constraint;
   if (room.settings.style) prompt += '. ' + room.settings.style;
   const r = room.round;
-  p.gen = true; p.attempts += 1; p.error = '';
+  p.gen = true; p.error = '';
   broadcastOne(room, p);
   try {
     const img = await limited(() => makeImage(prompt));
     if (room.round === r && room.phase === 'play' && !room.submitted.has(p.id)) {
-      const id = hex(8); room.images.set(id, img); p.cands.push(id);
+      const id = hex(8); room.images.set(id, img); p.cands.push(id); p.attempts += 1;
     }
   } catch (e) {
     p.error = e.message === 'refused' ? 'L’IA a refusé ce prompt. Essaie à nouveau.' : /busy 429/.test(e.message) ? 'Le quota de génération Google est atteint. Réessaie dans une minute.' : 'La génération a échoué. Réessaie dans un instant.';
@@ -284,6 +286,12 @@ function handle(ws, ctx, msg) {
         record(room, p, { type: 'prompt', text, skipped: !text });
       }
       maybeAdvance(room); break;
+    }
+    case 'constraint': {
+      if (room.phase !== 'play') break;
+      const t = taskFor(room, p); if (!t || !t.done || t.lastRound) break;
+      const st = room.albums[t.album].steps[t.round]; if (!st) break;
+      st.constraint = clean(msg.text, 80); send(p, viewFor(room, p)); break;
     }
     case 'generate': generate(room, p, msg.prompt); break;
     case 'reveal': {
