@@ -70,7 +70,7 @@ function albumsView(room) {
   return room.albums.map((al, i) => ({
     owner: (room.players.get(room.order[i]) || {}).name || 'Joueur',
     steps: al.steps.map((st) => st && ({
-      round: st.round, type: st.type, skipped: !!st.skipped, text: st.text || '', constraint: st.constraint || '',
+      round: st.round, type: st.type, skipped: !!st.skipped, text: st.text || '', constraint: st.constraint || '', extra: st.extra || '',
       author: (room.players.get(st.author) || {}).name || 'Joueur',
       url: st.imageId ? `/img/${room.code}/${st.imageId}` : null,
     })),
@@ -101,7 +101,7 @@ function secondsFor(room, type) {
 }
 function startRound(room) {
   room.submitted = new Set();
-  for (const id of room.order) { const p = room.players.get(id); if (p) { p.cands = []; p.attempts = 0; p.gen = false; p.error = ''; } }
+  for (const id of room.order) { const p = room.players.get(id); if (p) { p.cands = []; p.attempts = 0; p.gen = false; p.error = ''; p.extra = ''; } }
   room.endsAt = Date.now() + secondsFor(room, roundType(room.round)) * 1000;
   broadcast(room);
   botsPlay(room);
@@ -119,7 +119,7 @@ function finishRound(room) {
     if (!t) continue;
     if (t.type === 'image') {
       const last = (p.cands || []).slice(-1)[0];
-      record(room, p, { type: 'image', imageId: last || null, skipped: !last });
+      record(room, p, { type: 'image', imageId: last || null, skipped: !last, extra: last ? (p.extra || '') : '' });
     } else {
       record(room, p, { type: 'prompt', text: '', skipped: true });
     }
@@ -196,12 +196,14 @@ async function makeImage(prompt) {
   }
   throw lastErr || new Error('fail');
 }
-async function generate(room, p, extraPrompt) {
+async function generate(room, p, extraPrompt, extra) {
   const t = taskFor(room, p);
   if (!t || t.type !== 'image' || t.done || p.gen || p.attempts >= MAX_ATTEMPTS) return;
   let prompt = t.recv && !t.recv.skipped && t.recv.text ? t.recv.text : clean(extraPrompt, 700);
   if (!prompt) { p.error = 'Aucun prompt reçu : écris le tien.'; return send(p, viewFor(room, p)); }
   if (t.recv && t.recv.constraint) prompt += '. Élément obligatoire à intégrer : ' + t.recv.constraint;
+  extra = clean(extra, 80);
+  if (extra) prompt += '. Élément ajouté par le joueur : ' + extra;
   if (room.settings.style) prompt += '. ' + room.settings.style;
   const r = room.round;
   p.gen = true; p.error = '';
@@ -209,7 +211,7 @@ async function generate(room, p, extraPrompt) {
   try {
     const img = await limited(() => makeImage(prompt));
     if (room.round === r && room.phase === 'play' && !room.submitted.has(p.id)) {
-      const id = hex(8); room.images.set(id, img); p.cands.push(id); p.attempts += 1;
+      const id = hex(8); room.images.set(id, img); p.cands.push(id); p.attempts += 1; p.extra = extra;
     }
   } catch (e) {
     p.error = e.message === 'refused' ? 'L’IA a refusé ce prompt. Essaie à nouveau.' : /busy 429/.test(e.message) ? 'Le quota de génération Google est atteint. Réessaie dans une minute.' : 'La génération a échoué. Réessaie dans un instant.';
@@ -280,7 +282,7 @@ function handle(ws, ctx, msg) {
       const t = taskFor(room, p); if (!t || t.done) break;
       if (t.type === 'image') {
         const id = (p.cands || []).includes(msg.imageId) ? msg.imageId : (p.cands || []).slice(-1)[0];
-        record(room, p, { type: 'image', imageId: id || null, skipped: !id });
+        record(room, p, { type: 'image', imageId: id || null, skipped: !id, extra: id ? (p.extra || '') : '' });
       } else {
         const text = clean(msg.text, 700);
         record(room, p, { type: 'prompt', text, skipped: !text });
@@ -293,7 +295,7 @@ function handle(ws, ctx, msg) {
       const st = room.albums[t.album].steps[t.round]; if (!st) break;
       st.constraint = clean(msg.text, 80); send(p, viewFor(room, p)); break;
     }
-    case 'generate': generate(room, p, msg.prompt); break;
+    case 'generate': generate(room, p, msg.prompt, msg.extra); break;
     case 'reveal': {
       if (!isHost) break;
       if (msg.a === 'next' && room.phase === 'reveal') {
