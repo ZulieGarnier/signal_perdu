@@ -1,1 +1,25 @@
-
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signal perdu</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700;800&display=swap">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <span class="logo-chip"><img src="/mjm-logo.png" alt="MJM Graphic Design" width="136" height="29"></span>
+      <div><h1>Signal perdu</h1><p class="sub" id="sub">Connexion…</p></div>
+    </div>
+    <div class="status"><span class="pill" id="phase" hidden></span><span class="timer" id="timer" hidden>0:00</span></div>
+  </header>
+  <main id="screen"></main>
+</div>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>
