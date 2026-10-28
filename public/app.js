@@ -96,6 +96,7 @@
       } else if (ty === 'image') {
         h += '<h2>Transforme ce prompt en image</h2>' + recvPromptHTML(t) +
           '<div id="own"></div>' +
+          '<div class="field" id="xfield"><label for="xtext">Ajoute un élément à ce prompt (facultatif)</label><input type="text" id="xtext" maxlength="80" placeholder="ex. un parapluie jaune, une lumière de coucher de soleil…"></div>' +
           '<div class="actions"><button class="btn primary" data-act="gen" id="btnGen">Générer l’image</button><span class="muted" id="attempts"></span></div>' +
           '<p class="error" id="gerr"></p><div class="cands" id="cands"></div>' +
           '<div class="actions"><button class="btn primary" data-act="sendimg" id="btnSend" disabled>Envoyer cette image</button></div>';
@@ -168,7 +169,7 @@
         }
         $('#btnGen').disabled = t.busy || t.attempts >= t.maxAttempts;
         $('#btnGen').textContent = t.candidates.length ? 'Générer une autre version' : 'Générer l’image';
-        if (t.candidates.length && t.maxAttempts === 1) $('#btnGen').hidden = true;
+        if (t.candidates.length && t.maxAttempts === 1) { $('#btnGen').hidden = true; var xf = $('#xfield'); if (xf) xf.hidden = true; }
         $('#attempts').textContent = t.maxAttempts === 1 ? 'Une seule génération par tour : fais-la compter.' : (t.maxAttempts - t.attempts) + ' essai(s) restant(s)';
         $('#gerr').textContent = t.error || '';
         $('#btnSend').disabled = !selected;
@@ -203,7 +204,7 @@
       ? '<div class="imgbox">' + (st.url ? '<img src="' + esc(st.url) + '" alt="Image de l’étape ' + (i + 1) + '">' : '<span class="ph">Pas d’image</span>') + '</div>'
       : '';
     var right = st.type === 'image'
-      ? '<p class="who">' + esc(st.author) + ' a généré cette image' + tag + '</p>' + (st.skipped ? '<p class="badge">Rien n’a été généré à temps.</p>' : '')
+      ? '<p class="who">' + esc(st.author) + ' a généré cette image' + tag + '</p>' + (st.extra ? '<p class="badge">Élément ajouté au prompt : « ' + esc(st.extra) + ' »</p>' : '') + (st.skipped ? '<p class="badge">Rien n’a été généré à temps.</p>' : '')
       : '<p class="who">' + esc(st.author) + (i === 0 ? ' a écrit le prompt de départ' : ' a décrit l’image') + tag + '</p>' + (st.skipped ? '<p class="badge">Pas de prompt à temps.</p>' : '<blockquote class="quote">' + esc(st.text) + '</blockquote>');
     if (st.constraint) right += '<p class="badge">Élément imposé au joueur suivant : « ' + esc(st.constraint) + ' »</p>';
     return '<article class="card step' + (anim ? ' in' : '') + '">' + (body || '<div></div>') + '<div style="display:flex;flex-direction:column;gap:12px;min-width:0">' + right + '</div></article>';
@@ -243,7 +244,7 @@
       send({ t: 'start', settings: { rounds: +$('#s-rounds').value, secWrite: +$('#s-w').value, secImage: +$('#s-i').value, secDescribe: +$('#s-d').value, style: $('#s-style').value, hostPlays: $('#s-play').checked } });
     } else if (a === 'sugg') { var ta = $('#ptext'); if (ta) { ta.value = SUGGESTIONS[+el.getAttribute('data-i')]; ta.focus(); } }
     else if (a === 'sendtext') sendText();
-    else if (a === 'gen') { var own = $('#own textarea'); send({ t: 'generate', prompt: own ? own.value : '' }); }
+    else if (a === 'gen') { var own = $('#own textarea'), xt = $('#xtext'); send({ t: 'generate', prompt: own ? own.value : '', extra: xt ? xt.value : '' }); }
     else if (a === 'pick') { selected = el.getAttribute('data-id'); var c = $('#cands'); if (c) c.dataset.sig = ''; update(key); }
     else if (a === 'sendimg') send({ t: 'submit', imageId: selected });
     else if (a === 'rnext') send({ t: 'reveal', a: 'next' });
