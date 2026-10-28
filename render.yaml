@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: signal-perdu
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_IMAGE_MODEL
+        value: gemini-2.5-flash-image
