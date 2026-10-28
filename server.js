@@ -177,17 +177,21 @@ async function makeImage(prompt) {
     try {
       const res = await fetch(url, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': API_KEY },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+        body: JSON.stringify({ contents: [{ parts: [{ text: (attempt === 0 ? 'Génère une image (réponds uniquement par une image, sans texte) : ' : 'Create an image, output only the image: ') + prompt }] }], generationConfig: { responseModalities: ['IMAGE'] } }),
       });
-      if (res.status === 429 || res.status >= 500) { lastErr = new Error('busy ' + res.status); await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); continue; }
+      if (res.status === 429 || res.status >= 500) { const body = await res.json().catch(() => ({})); lastErr = new Error('busy ' + res.status + ' ' + ((body.error && body.error.message) || '').slice(0, 400)); if (res.status === 429 && /limit: 0|billing|plan/i.test(lastErr.message)) break; await new Promise((r) => setTimeout(r, 1500 * (attempt + 1))); continue; }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((data.error && data.error.message) || ('HTTP ' + res.status));
       const parts = (((data.candidates || [])[0] || {}).content || {}).parts || [];
       const part = parts.find((x) => (x.inlineData || x.inline_data));
-      if (!part) throw new Error('refused');
+      if (!part) {
+        const cand = (data.candidates || [])[0] || {};
+        console.error('no image returned:', JSON.stringify({ finish: cand.finishReason, block: data.promptFeedback && data.promptFeedback.blockReason, text: parts.map((x) => x.text).filter(Boolean).join(' ').slice(0, 300) }));
+        lastErr = new Error('refused'); continue;
+      }
       const inl = part.inlineData || part.inline_data;
       return { buf: Buffer.from(inl.data, 'base64'), type: inl.mimeType || inl.mime_type || 'image/png' };
-    } catch (e) { lastErr = e; if (e.message === 'refused') break; }
+    } catch (e) { lastErr = e; }
   }
   throw lastErr || new Error('fail');
 }
@@ -206,7 +210,7 @@ async function generate(room, p, extraPrompt) {
       const id = hex(8); room.images.set(id, img); p.cands.push(id);
     }
   } catch (e) {
-    p.error = e.message === 'refused' ? 'L’IA a refusé ce prompt. Essaie à nouveau.' : 'La génération a échoué. Réessaie dans un instant.';
+    p.error = e.message === 'refused' ? 'L’IA a refusé ce prompt. Essaie à nouveau.' : /busy 429/.test(e.message) ? 'Le quota de génération Google est atteint. Réessaie dans une minute.' : 'La génération a échoué. Réessaie dans un instant.';
     console.error('gen error:', e.message);
   } finally { p.gen = false; broadcastOne(room, p); }
 }
