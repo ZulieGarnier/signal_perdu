@@ -82,7 +82,7 @@
         '<div class="field"><label for="s-style">Consigne de style ajoutée à chaque image (facultatif)</label><input type="text" id="s-style" maxlength="200" placeholder="ex. illustration, couleurs vives, sans texte"></div>' +
         '<label><input type="checkbox" id="s-play" checked> Je joue aussi (sinon je supervise seulement)</label>' +
         '<p class="muted">Chaque joueur écrit un prompt de départ ; chaque album passe ensuite entre toutes les mains en alternant image et description. Par défaut, autant de tours que de joueurs.</p>' +
-        '<div class="actions"><button class="btn primary" data-act="start" id="btnStart">Lancer la partie</button></div></section>';
+        '<div class="actions"><button class="btn primary" data-act="start" id="btnStart">Lancer la partie</button><button class="btn" data-act="addbot">Ajouter un joueur test</button></div><p class="muted">Pour t’entraîner seule : les joueurs test jouent automatiquement (images factices). Toi seule génères de vraies images.</p></section>';
     } else if (k.indexOf('play:') === 0) {
       var t = V.task, done = t.done, ty = t.type;
       h = '<section class="card" id="taskcard"><p class="eyebrow" id="steplabel"></p>';
@@ -139,7 +139,7 @@
       var l = $('#link'); if (l && l.value !== location.origin + '/?room=' + V.room) l.value = location.origin + '/?room=' + V.room;
       var np = V.players.filter(function (p) { return p.connected; }).length;
       $('#plist').innerHTML = V.players.map(function (p) {
-        return '<li class="chip' + (p.connected ? '' : ' off') + '">' + esc(p.name) + (p.id === V.me ? ' (toi)' : '') + (p.host ? ' · animateur' : '') +
+        return '<li class="chip' + (p.connected ? '' : ' off') + '">' + esc(p.name) + (p.id === V.me ? ' (toi)' : '') + (p.host ? ' · animateur' : '') + (p.bot ? ' · test' : '') +
           (V.host && p.id !== V.me ? '<button class="x" data-act="kick" data-id="' + esc(p.id) + '" aria-label="Retirer ' + esc(p.name) + '">×</button>' : '') + '</li>';
       }).join('');
       $('#plmeta').textContent = np + ' joueur' + (np > 1 ? 's' : '') + ' connecté' + (np > 1 ? 's' : '') + (V.host ? '' : ' · l’animateur lancera la partie.');
@@ -229,6 +229,7 @@
       if (a === 'create') send({ t: 'create', name: name, token: token });
       else { var code = qroom || (($('#rcode') || {}).value || '').trim().toUpperCase(); if (code.length !== 4) { toast('Saisis le code à 4 lettres.'); return; } send({ t: 'join', room: code, name: name, token: token }); }
     } else if (a === 'copy') { var l = $('#link'); l.select(); try { navigator.clipboard.writeText(l.value).then(function () { toast('Lien copié.'); }, function () { toast('Copie le lien sélectionné.'); }); } catch (x) { toast('Copie le lien sélectionné.'); } }
+    else if (a === 'addbot') send({ t: 'addbot' });
     else if (a === 'kick') send({ t: 'kick', id: el.getAttribute('data-id') });
     else if (a === 'start') {
       send({ t: 'start', settings: { rounds: +$('#s-rounds').value, secWrite: +$('#s-w').value, secImage: +$('#s-i').value, secDescribe: +$('#s-d').value, style: $('#s-style').value, hostPlays: $('#s-play').checked } });
